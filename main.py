@@ -1,78 +1,115 @@
 import numpy as np
-import pandas as pd
+import argparse
+import os
+from pathlib import Path
+
 import skimage
-from sklearn import preprocessing
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import BayesianRidge, LinearRegression, ElasticNet
 from sklearn.svm import SVR
 
-from sklearn.model_selection import cross_val_score  # 交叉验证
-from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score
 
-import argparse
-from argparse import ArgumentParser
-
-plt.rc("font", size=14)
-sns.set(style="white")
-sns.set(style="whitegrid", color_codes=True)
-
-# Read data to dataframe
-
-stageWeight = np.load('./stage0_Conv_features.npy', allow_pickle=True, encoding="latin1")
+"""Train a regression model that maps the weak detector's intermediate feature map to the offloading reward."""
 
 
-# 建立贝叶斯岭回归模型
-br_model = BayesianRidge()
-
-# 普通线性回归
-lr_model = LinearRegression()
-
-# 弹性网络回归模型
-etc_model = ElasticNet()
-
-# 支持向量机回归
-svr_model = SVR()
-
-# 梯度增强回归模型对象
-gbr_model = GradientBoostingRegressor()
-
-# 不同模型的名称列表
-model_names = ['BayesianRidge', 'LinearRegression', 'ElasticNet', 'SVR', 'GBR']
-# 不同回归模型
-model_dic = [br_model, lr_model, etc_model, svr_model, gbr_model]
-
-
-def load_offloading_reward():
-    coco_val = np.load('./offloading_reward/coco_val.npy', allow_pickle=True, encoding="latin1")
-    coco_train = np.load('./offloading_reward/coco_train.npy', allow_pickle=True, encoding="latin1")
-    voc_val = np.load('./offloading_reward/voc_val.npy', allow_pickle=True, encoding="latin1")
-    voc_train = np.load('./offloading_reward/voc_train.npy', allow_pickle=True, encoding="latin1")
-    return coco_val, coco_train, voc_val, voc_train
-
-
-# 计算回归系数
-def regression_beta(stage_weight, offloading_reward):
-    Xtx = np.dot(stage_weight.T, stage_weight)
-    Xty = np.dot(stage_weight.T, offloading_reward)
-    beta = np.linalg.solve(Xtx, Xty)
-
-coco_val = np.load('./offloading_reward/coco_val.npy', allow_pickle=True, encoding="latin1")
-
-
-# stageWeight = skimage.measure.block_reduce(stageWeight.reshape(-1), block_size=(5000,), func=np.mean)
-regression_beta(stageWeight, coco_val)
-
-def global_max_pooling_forward(z):
+def load_feature(path, stage):
     """
-    全局最大池化前向过程
-    :param z: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
-    :return:
+    Load the feature maps.
+    :param path: path to the folder where the feature maps are stored.
+    :param stage: the stage number of the feature map.
+    :return: the loaded data as an ndarray.
     """
-    return np.max(np.max(z, axis=-1), -1)
+    # The stage names of yolov5 detectors.
+    v5_names = ['Conv', 'Conv', 'C3', 'Conv', 'C3', 'Conv', 'C3', 'Conv', 'C3', 'SPPF', 'Conv', 'Upsample', 'Concat',
+                'C3', 'Conv', 'Upsample', 'Concat', 'C3', 'Conv', 'Concat', 'C3', 'Conv', 'Concat', 'C3']
+    data = list()
+    # Read the data from each npy file.
+    for img_name in os.listdir(path):
+        file_path = os.path.join(path, img_name, f"stage{stage}_{v5_names[stage]}_features.npy")
+        file_data = np.load(file_path)
+        # Down-sample the feature maps to reduce data size.
+        # TODO: Play around with different choices of block size and down sampling functions.
+        file_data = skimage.measure.block_reduce(file_data, block_size=(1, 2, 2), func=np.max)
+        data.append(file_data)
+    return data
 
 
-res = global_max_pooling_forward(stageWeight)
-print(res.ndim)
+def fit_BR(train_feature, val_feature, train_reward, opts=None):
+    """
+    Fit a Bayesian ridge regression model that predicts offloading reward based on weak detector feature map.
+    :param train_feature: weak detector feature maps for the training dataset.
+    :param val_feature: weak detector feature maps for the validation dataset.
+    :param train_reward: offloading rewards for the training dataset.
+    :param opts: options for fitting the regression model.
+    :return: the estimated offloading reward for the training and validation dataset.
+    """
+    return
 
+
+def fit_LR(train_feature, val_feature, train_reward, opts=None):
+    """Fit a linear regression model to predict offloading reward."""
+    train_feature = [x.flatten() for x in train_feature]
+    val_feature = [x.flatten() for x in val_feature]
+    reg = LinearRegression().fit(train_feature, train_reward)
+    train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    return train_est, val_est
+
+
+def fit_EN(train_feature, val_feature, train_reward, opts=None):
+    """Fit an elastic net model to predict offloading reward."""
+    return
+
+
+def fit_SVR(train_feature, val_feature, train_reward, opts=None):
+    """Fit a support vector regression model to predict offloading reward."""
+    return
+
+
+def fit_GBR(train_feature, val_feature, train_reward, opts=None):
+    """Fit a Gradient Boosting Regressor to predict offloading reward."""
+    return
+
+
+def main(opts):
+    # Load the weak detector feature maps for the training and validation dataset.
+    train_feature = load_feature(opts.train_dir, opts.stage)
+    val_feature = load_feature(opts.val_dir, opts.stage)
+    # Load the offloading rewards for the training dataset.
+    train_reward = np.load(opts.label)
+    assert len(train_feature) == len(
+        train_reward), "Inconsistent number of training feature maps and offloading rewards."
+    # Select and fit the regression model.
+    model_names = ['BR', 'LR', 'EN', 'SVR', 'GBR']
+    models = [fit_BR, fit_LR, fit_EN, fit_SVR, fit_GBR]
+    try:
+        model_idx = model_names.index(opts.model)
+        model = models[model_idx]
+    except ValueError:
+        print("Please select a regression model from 'BR' (Bayesian Ridge), 'LR' (Linear Regression), " +
+              "'EN' (Elastic Net), 'SVR' (Support Vector Regression), and 'GBR' (Gradient Boosting Regressor).")
+    train_est, val_est = model(train_feature, val_feature, train_reward)
+    # Save the estimated offloading reward.
+    Path(opts.save_dir).mkdir(parents=True, exist_ok=True)
+    np.savez(os.path.join(opts.save_dir, f'{opts.model}_estimate.npz'), train=train_est, val=val_est)
+    return
+
+
+def getargs():
+    """Parse command line arguments."""
+    args = argparse.ArgumentParser()
+    args.add_argument('train_dir', help="Directory that saves the weak detector feature maps for the training set.")
+    args.add_argument('val_dir', help="Directory that saves the weak detector feature maps for the validation set.")
+    args.add_argument('label', help="Path to the offloading reward for the training set.")
+    args.add_argument('save_dir', help="Directory to save the estimated offloading reward.")
+    args.add_argument('--stage', type=int, default=23,
+                      help="Stage number of the selected feature map. For yolov5 detectors, " +
+                           "this should be a number between [0, 23].")
+    args.add_argument('--model', type=str, default='LR',
+                      help="Type of the regression model. Available choices include 'BR' (Bayesian Ridge), " +
+                           "'LR' (Linear Regression), 'EN' (Elastic Net), 'SVR' (Support Vector Regression), " +
+                           "and 'GBR' (Gradient Boosting Regressor).")
+    return args.parse_args()
+
+
+if __name__ == '__main__':
+    main(getargs())
