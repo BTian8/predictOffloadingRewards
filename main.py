@@ -11,7 +11,7 @@ from sklearn.svm import SVR
 
 """Train a regression model that maps the weak detector's intermediate feature map to the offloading reward."""
 
-stageWeight1 = np.load('./stage9_SPPF_features(1).npy', allow_pickle=True, encoding="latin1")
+"""stageWeight1 = np.load('./stage9_SPPF_features(1).npy', allow_pickle=True, encoding="latin1")
 stageWeight2 = np.load('./stage9_SPPF_features(2).npy', allow_pickle=True, encoding="latin1")
 stageWeight3 = np.load('./stage9_SPPF_features(3).npy', allow_pickle=True, encoding="latin1")
 stageWeight4 = np.load('./stage9_SPPF_features(4).npy', allow_pickle=True, encoding="latin1")
@@ -20,7 +20,7 @@ print(stageWeight1.shape)
 print(stageWeight2.shape)
 print(stageWeight3.shape)
 print(stageWeight4.shape)
-print(stageWeight5.shape)
+print(stageWeight5.shape)"""
 
 def load_feature(path, stage):
     """
