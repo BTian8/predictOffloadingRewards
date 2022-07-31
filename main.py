@@ -11,6 +11,16 @@ from sklearn.svm import SVR
 
 """Train a regression model that maps the weak detector's intermediate feature map to the offloading reward."""
 
+stageWeight1 = np.load('./stage9_SPPF_features(1).npy', allow_pickle=True, encoding="latin1")
+stageWeight2 = np.load('./stage9_SPPF_features(2).npy', allow_pickle=True, encoding="latin1")
+stageWeight3 = np.load('./stage9_SPPF_features(3).npy', allow_pickle=True, encoding="latin1")
+stageWeight4 = np.load('./stage9_SPPF_features(4).npy', allow_pickle=True, encoding="latin1")
+stageWeight5 = np.load('./stage9_SPPF_features(5).npy', allow_pickle=True, encoding="latin1")
+print(stageWeight1.shape)
+print(stageWeight2.shape)
+print(stageWeight3.shape)
+print(stageWeight4.shape)
+print(stageWeight5.shape)
 
 def load_feature(path, stage):
     """
@@ -43,7 +53,12 @@ def fit_BR(train_feature, val_feature, train_reward, opts=None):
     :param opts: options for fitting the regression model.
     :return: the estimated offloading reward for the training and validation dataset.
     """
-    return
+    train_feature = [x.flatten() for x in train_feature]
+    val_feature = [x.flatten() for x in val_feature]
+    """alpha_init, lambda_init"""
+    reg = BayesianRidge().fit(train_feature, train_reward)
+    train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    return train_est, val_est
 
 
 def fit_LR(train_feature, val_feature, train_reward, opts=None):
@@ -57,17 +72,30 @@ def fit_LR(train_feature, val_feature, train_reward, opts=None):
 
 def fit_EN(train_feature, val_feature, train_reward, opts=None):
     """Fit an elastic net model to predict offloading reward."""
-    return
+    train_feature = [x.flatten() for x in train_feature]
+    val_feature = [x.flatten() for x in val_feature]
+    reg = ElasticNet().fit(train_feature, train_reward)
+    train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    return train_est, val_est
+
 
 
 def fit_SVR(train_feature, val_feature, train_reward, opts=None):
     """Fit a support vector regression model to predict offloading reward."""
-    return
+    train_feature = [x.flatten() for x in train_feature]
+    val_feature = [x.flatten() for x in val_feature]
+    reg = SVR().fit(train_feature, train_reward)
+    train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    return train_est, val_est
 
 
 def fit_GBR(train_feature, val_feature, train_reward, opts=None):
     """Fit a Gradient Boosting Regressor to predict offloading reward."""
-    return
+    train_feature = [x.flatten() for x in train_feature]
+    val_feature = [x.flatten() for x in val_feature]
+    reg = GradientBoostingRegressor().fit(train_feature, train_reward)
+    train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    return train_est, val_est
 
 
 def main(opts):
