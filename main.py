@@ -1,6 +1,7 @@
 import numpy as np
 import argparse
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import skimage
@@ -8,19 +9,8 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import BayesianRidge, LinearRegression, ElasticNet
 from sklearn.svm import SVR
 
-
 """Train a regression model that maps the weak detector's intermediate feature map to the offloading reward."""
 
-stageWeight1 = np.load('./stage9_SPPF_features(1).npy', allow_pickle=True, encoding="latin1")
-stageWeight2 = np.load('./stage9_SPPF_features(2).npy', allow_pickle=True, encoding="latin1")
-stageWeight3 = np.load('./stage9_SPPF_features(3).npy', allow_pickle=True, encoding="latin1")
-stageWeight4 = np.load('./stage9_SPPF_features(4).npy', allow_pickle=True, encoding="latin1")
-stageWeight5 = np.load('./stage9_SPPF_features(5).npy', allow_pickle=True, encoding="latin1")
-print(stageWeight1.shape)
-print(stageWeight2.shape)
-print(stageWeight3.shape)
-print(stageWeight4.shape)
-print(stageWeight5.shape)
 
 def load_feature(path, stage):
     """
@@ -44,7 +34,19 @@ def load_feature(path, stage):
     return data
 
 
-def fit_BR(train_feature, val_feature, train_reward, opts=None):
+@dataclass
+class BROpt:
+    """Options for the Bayesian ridge regression model."""
+    alpha_1: float = 1e-6  # Shape parameter for the Gamma distribution prior over the alpha parameter.
+    alpha_2: float = 1e-6  # Rate parameter for the Gamma distribution prior over the alpha parameter.
+    lambda_1: float = 1e-6  # Shape parameter for the Gamma distribution prior over the lambda parameter.
+    lambda_2: float = 1e-6  # Rate parameter for the Gamma distribution prior over the lambda parameter.
+
+
+_BROPT = BROpt()
+
+
+def fit_BR(train_feature, val_feature, train_reward, opts=_BROPT):
     """
     Fit a Bayesian ridge regression model that predicts offloading reward based on weak detector feature map.
     :param train_feature: weak detector feature maps for the training dataset.
@@ -55,8 +57,8 @@ def fit_BR(train_feature, val_feature, train_reward, opts=None):
     """
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
-    """alpha_init, lambda_init"""
-    reg = BayesianRidge().fit(train_feature, train_reward)
+    reg = BayesianRidge(alpha_1=opts.alpha_1, alpha_2=opts.alpha_2, lambda_1=opts.lambda_1, lambda_2=opts.lambda_2).fit(
+        train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
     return train_est, val_est
 
@@ -70,30 +72,62 @@ def fit_LR(train_feature, val_feature, train_reward, opts=None):
     return train_est, val_est
 
 
-def fit_EN(train_feature, val_feature, train_reward, opts=None):
+@dataclass
+class ENOpt:
+    """Options for the Elastic net regression model."""
+    alpha: float = 1.0  # Constant that multiplies the penalty terms.
+    l1_ratio: float = 0.5  # The ElasticNet mixing parameter.
+
+
+_ENOPT = ENOpt()
+
+
+def fit_EN(train_feature, val_feature, train_reward, opts=_ENOPT):
     """Fit an elastic net model to predict offloading reward."""
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
-    reg = ElasticNet().fit(train_feature, train_reward)
+    reg = ElasticNet(alpha=opts.alpha, l1_ratio=opts.l1_ratio).fit(train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
     return train_est, val_est
 
 
+@dataclass
+class SVROpt:
+    """Options for the support vector regression model."""
+    kernel: str = 'rbf'  # Specifies the kernel type to be used in the algorithm.
+    gamma: str = 'scale'  # Kernel coefficient for 'rbf', 'poly' and 'sigmoid'.
+    C: float = 1.0  # Regularization parameter.
 
-def fit_SVR(train_feature, val_feature, train_reward, opts=None):
+
+_SVROPT = SVROpt()
+
+
+def fit_SVR(train_feature, val_feature, train_reward, opts=_SVROPT):
     """Fit a support vector regression model to predict offloading reward."""
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
-    reg = SVR().fit(train_feature, train_reward)
+    reg = SVR(kernel=opts.kernel, gamma=opts.gamma, C=C).fit(train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
     return train_est, val_est
 
 
-def fit_GBR(train_feature, val_feature, train_reward, opts=None):
+@dataclass
+class GBROpt:
+    """Options for the Gradient Boosting regression model."""
+    learning_rate: float = 0.1
+    n_estimators: int = 100  # The number of boosting stages to perform.
+    subsample: float = 1.0  # The fraction of samples to be used for fitting the individual base learners。
+
+
+_GBROPT = GBROpt()
+
+
+def fit_GBR(train_feature, val_feature, train_reward, opts=_GBROPT):
     """Fit a Gradient Boosting Regressor to predict offloading reward."""
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
-    reg = GradientBoostingRegressor().fit(train_feature, train_reward)
+    reg = GradientBoostingRegressor(learning_rate=opts.learning_rate, n_estimators=opts.n_estimators,
+                                    subsample=ops.subsample).fit(train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
     return train_est, val_est
 
