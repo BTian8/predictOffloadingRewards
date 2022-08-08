@@ -1,15 +1,19 @@
 import numpy as np
 import argparse
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List
 import matplotlib.pyplot as plt
 
 import torch
 from torchvision.ops import roi_align, roi_pool
+from torch.utils.data import DataLoader
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import BayesianRidge, LinearRegression, ElasticNet
 from sklearn.svm import SVR
+
+from .nn_model import EdgeDetectionDataset, EdgeDetectionNet
 
 """Train a regression model that maps the weak detector's intermediate feature map to the offloading reward."""
 
@@ -31,7 +35,7 @@ def roi_padding(x):
     return feature_map, coord
 
 
-def load_feature(path, stage, pool=True, batch_size=128, func="avg", size=4):
+def load_feature(path, stage, pool=True, batch_size=128, func="avg", size=8):
     """
     Load the feature maps.
     :param path: path to the folder where the feature maps are stored.
@@ -165,7 +169,7 @@ class GBROpt:
     """Options for the Gradient Boosting regression model."""
     learning_rate: float = 0.1
     n_estimators: int = 100  # The number of boosting stages to perform.
-    subsample: float = 1.0  # The fraction of samples to be used for fitting the individual base learners。
+    subsample: float = 1.0  # The fraction of samples to be used for fitting the individual base learners.
 
 
 _GBROPT = GBROpt()
@@ -181,23 +185,114 @@ def fit_GBR(train_feature, val_feature, train_reward, opts=_GBROPT):
     return train_est, val_est
 
 
+@dataclass
+class CNNOpt:
+    """Options for the Gradient Boosting regression model."""
+    learning_rate: float = 1e-3  # Initial learning rate.
+    gamma: float = 0.1  # Scale for updating learning rate at each milestone.
+    milestones: List = field(default_factory=lambda: [10, 15, 20])  # Epochs to update the learning rate.
+    max_epoch: int = 25  # Maximum number of epochs for training.
+    channels: List = field(default_factory=lambda: [256, 128, 32])  # Number of channels in each conv layer.
+    kernels: List = field(default_factory=lambda: [3, 3])  # Kernel size for each conv layer.
+    pools: List = field(default_factory=lambda: [True, True])  # Whether max-pooling each conv layer.
+    linear: List = field(default_factory=lambda: [])  # Number of features in each linear after the conv layers.
+
+
+@dataclass
+class CNNOpt:
+    """Options for the Gradient Boosting regression model."""
+    learning_rate: float = 1e-3  # Initial learning rate.
+    gamma: float = 0.1  # Scale for updating learning rate at each milestone.
+    milestones: List = field(default_factory=lambda: [10, 15, 20])  # Epochs to update the learning rate.
+    max_epoch: int = 25  # Maximum number of epochs for training.
+    channels: List = field(default_factory=lambda: [256, 128, 32])  # Number of channels in each conv layer.
+    kernels: List = field(default_factory=lambda: [3, 3])  # Kernel size for each conv layer.
+    pools: List = field(default_factory=lambda: [True, True])  # Whether max-pooling each conv layer.
+    linear: List = field(default_factory=lambda: [])  # Number of features in each linear after the conv layers.
+
+
+_CNNOPT = CNNOpt()
+
+
+def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
+    """Fit a Convolutional Neural Network to predict offloading reward."""
+    # Import pytorch.
+    import torch
+    from torch.utils.data import DataLoader
+    # Prepare the dataset.
+    # TODO: add validation reward as labels to perform periodic validation.
+    train_data = EdgeDetectionDataset(train_feature, train_reward)
+    val_data = EdgeDetectionDataset(val_feature, np.zeros((len(val_feature),)))
+    train_dataloader = DataLoader(train_data, batch_size=64)
+    val_dataloader = DataLoader(val_data, batch_size=64)
+    # Get cpu or gpu device for training.
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using {device} device")
+    # Build the CNN model.
+    model = EdgeDetectionNet(opts.channels, opts.kernels, opts.pools, opts.linear).to(device)
+    print(model)
+    # Declare loss function, optimizer, and scheduler.
+    loss_fn = torch.nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=opts.learning_rate)
+    scheduler = torch.optim.MultiStepLR(optimizer, milestones=opts.milestones, gamma=0.1)
+    # Define the training function.
+
+    def train(dataloader, model, loss_fn, optimizer):
+        size = len(dataloader.dataset)
+        model.train()
+        for batch, (X, y) in enumerate(dataloader):
+            X, y = X.to(device), y.to(device)
+            # Compute prediction error
+            pred = model(X)
+            loss = loss_fn(pred, y)
+            # Backpropagation
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            if batch % 100 == 0:
+                loss, current = loss.item(), batch * len(X)
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+    # The training loop.
+    epochs = opts.milestones.append(opts.max_epoch)
+    last_epoch = 0
+    for epoch in epochs:
+        for t in range(last_epoch, epoch):
+            print(f"Epoch {t + 1}\n-------------------------------")
+            train(train_dataloader, model, loss_fn, optimizer)
+            scheduler.step()
+        last_epoch = epoch
+    # TODO: save the model weights to model directory.
+    # Estimate the offloading reward for both training and validation set.
+    with torch.no_grad():
+        train_est, val_est = list(), list()
+        for X, y in val_dataloader:
+            train_est.append(model(X).numpy())
+        train_est = np.concatenate(train_est)
+        for X, y in val_dataloader:
+            val_est.append(model(X).numpy())
+        val_est = np.concatenate(val_est)
+    return train_est, val_est
+
+
 def main(opts):
     # Load the weak detector feature maps for the training and validation dataset.
-    train_feature = load_feature(opts.train_dir, opts.stage, size=4)
-    val_feature = load_feature(opts.val_dir, opts.stage, size=4)
+    train_feature = load_feature(opts.train_dir, opts.stage, size=5)
+    val_feature = load_feature(opts.val_dir, opts.stage, size=5)
     # Load the offloading rewards for the training dataset.
     train_reward = np.load(opts.label)
     assert len(train_feature) == len(
         train_reward), "Inconsistent number of training feature maps and offloading rewards."
     # Select and fit the regression model.
-    model_names = ['BR', 'LR', 'EN', 'SVR', 'GBR']
-    models = [fit_BR, fit_LR, fit_EN, fit_SVR, fit_GBR]
+    model_names = ['BR', 'LR', 'EN', 'SVR', 'GBR', 'LCNN', 'FCNN']
+    models = [fit_BR, fit_LR, fit_EN, fit_SVR, fit_GBR, fit_LCNN, fit_FCNN]
     try:
         model_idx = model_names.index(opts.model)
         model = models[model_idx]
     except ValueError:
         print("Please select a regression model from 'BR' (Bayesian Ridge), 'LR' (Linear Regression), " +
-              "'EN' (Elastic Net), 'SVR' (Support Vector Regression), and 'GBR' (Gradient Boosting Regressor).")
+              "'EN' (Elastic Net), 'SVR' (Support Vector Regression), 'GBR' (Gradient Boosting Regressor), " +
+              "'LCNN' (CNN with linear layers), and 'FCNN' (fully convolutional NN).")
     train_est, val_est = model(train_feature, val_feature, train_reward)
     # Save the estimated offloading reward.
     Path(opts.save_dir).mkdir(parents=True, exist_ok=True)
@@ -212,13 +307,15 @@ def getargs():
     args.add_argument('val_dir', help="Directory that saves the weak detector feature maps for the validation set.")
     args.add_argument('label', help="Path to the offloading reward for the training set.")
     args.add_argument('save_dir', help="Directory to save the estimated offloading reward.")
+    args.add_argument('--model_dir', type=str, default='', help="Directory to save the model weights.")
     args.add_argument('--stage', type=int, default=23,
                       help="Stage number of the selected feature map. For yolov5 detectors, " +
                            "this should be a number between [0, 23].")
     args.add_argument('--model', type=str, default='LR',
                       help="Type of the regression model. Available choices include 'BR' (Bayesian Ridge), " +
                            "'LR' (Linear Regression), 'EN' (Elastic Net), 'SVR' (Support Vector Regression), " +
-                           "and 'GBR' (Gradient Boosting Regressor).")
+                           "'GBR' (Gradient Boosting Regressor), 'LCNN' (CNN with linear layers), " +
+                           "and 'FCNN' (fully convolutional NN).")
     return args.parse_args()
 
 
