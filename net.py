@@ -45,10 +45,10 @@ class EdgeDetectionNet(nn.Module):
         for in_channel, out_channel, kernel_size, pool in zip(channels[:-1], channels[1:], kernels, pools):
             self.conv_stacks.append(self.conv_stack(in_channel, out_channel, kernel_size, pool))
         if len(linear) > 0:
-            drops = [True] * (len(linear) - 1)
-            drops[-1] = False
-            for in_feature, out_feature, dropout in zip(linear[:-1], linear[1:], drops):
-                self.linear_stacks.append(self.linear_stack(in_feature, out_feature, dropout))
+            last = [False] * (len(linear) - 1)
+            last[-1] = True
+            for in_feature, out_feature, l in zip(linear[:-1], linear[1:], last):
+                self.linear_stacks.append(self.linear_stack(in_feature, out_feature, l))
 
     def conv_stack(self, in_channels, out_channels, kernel_size, pool):
         """
@@ -60,23 +60,24 @@ class EdgeDetectionNet(nn.Module):
         :return: the constructed convolutional stack.
         """
         modules = [nn.Conv2d(in_channels, out_channels, kernel_size, padding='same'),
-                   self.relu,
-                   nn.BatchNorm2d(out_channels)]
+                   nn.BatchNorm2d(out_channels),
+                   self.relu]
         if pool:
             modules.append(self.pool)
         conv = nn.Sequential(*modules)
         return conv
 
-    def linear_stack(self, in_features, out_features, dropout=False):
+    def linear_stack(self, in_features, out_features, last=False):
         """
         Build a linear (fully-connected) layer with relu activator, and (optional) dropout.
         :param in_features: number of features in the input.
         :param out_features: number of channels in the output.
-        :param dropout: whether dropout is applied.
+        :param last: whether it is the last layer.
         :return: the constructed linear stack.
         """
-        modules = [nn.Linear(in_features, out_features), self.relu]
-        if dropout:
+        modules = [nn.Linear(in_features, out_features)]
+        if not last:
+            modules.append(self.relu)
             modules.append(nn.Dropout())
         linear = nn.Sequential(*modules)
         return linear
