@@ -284,15 +284,15 @@ def main(opts):
     assert len(train_feature) == len(
         train_reward), "Inconsistent number of training feature maps and offloading rewards."
     # Select and fit the regression model.
-    model_names = ['BR', 'LR', 'EN', 'SVR', 'GBR', 'LCNN', 'FCNN']
-    models = [fit_BR, fit_LR, fit_EN, fit_SVR, fit_GBR, fit_LCNN, fit_FCNN]
+    model_names = ['BR', 'LR', 'EN', 'SVR', 'GBR', 'CNN']
+    models = [fit_BR, fit_LR, fit_EN, fit_SVR, fit_GBR, fit_CNN]
     try:
         model_idx = model_names.index(opts.model)
         model = models[model_idx]
     except ValueError:
         print("Please select a regression model from 'BR' (Bayesian Ridge), 'LR' (Linear Regression), " +
               "'EN' (Elastic Net), 'SVR' (Support Vector Regression), 'GBR' (Gradient Boosting Regressor), " +
-              "'LCNN' (CNN with linear layers), and 'FCNN' (fully convolutional NN).")
+              "and 'CNN' (Convolutional Neural Network).")
     train_est, val_est = model(train_feature, val_feature, train_reward)
     # Save the estimated offloading reward.
     Path(opts.save_dir).mkdir(parents=True, exist_ok=True)
@@ -314,8 +314,7 @@ def getargs():
     args.add_argument('--model', type=str, default='LR',
                       help="Type of the regression model. Available choices include 'BR' (Bayesian Ridge), " +
                            "'LR' (Linear Regression), 'EN' (Elastic Net), 'SVR' (Support Vector Regression), " +
-                           "'GBR' (Gradient Boosting Regressor), 'LCNN' (CNN with linear layers), " +
-                           "and 'FCNN' (fully convolutional NN).")
+                           "'GBR' (Gradient Boosting Regressor), and 'CNN' (Convolutional Neural Network).")
     return args.parse_args()
 
 
