@@ -13,7 +13,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import BayesianRidge, LinearRegression, ElasticNet
 from sklearn.svm import SVR
 
-from .nn_model import EdgeDetectionDataset, EdgeDetectionNet
+from .net import EdgeDetectionDataset, EdgeDetectionNet
 
 """Train a regression model that maps the weak detector's intermediate feature map to the offloading reward."""
 
