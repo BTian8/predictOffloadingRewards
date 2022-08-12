@@ -205,6 +205,7 @@ class CNNOpt:
     gamma: float = 0.1  # Scale for updating learning rate at each milestone.
     milestones: List = field(default_factory=lambda: [10, 15, 20])  # Epochs to update the learning rate.
     max_epoch: int = 25  # Maximum number of epochs for training.
+    batch_size: int = 64  # Batch size for model training.
     channels: List = field(default_factory=lambda: [256, 128, 32])  # Number of channels in each conv layer.
     kernels: List = field(default_factory=lambda: [3, 3])  # Kernel size for each conv layer.
     pools: List = field(default_factory=lambda: [True, True])  # Whether max-pooling each conv layer.
@@ -223,8 +224,8 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
     # TODO: add validation reward as labels to perform periodic validation.
     train_data = EdgeDetectionDataset(train_feature, train_reward)
     val_data = EdgeDetectionDataset(val_feature, np.zeros((len(val_feature),)))
-    train_dataloader = DataLoader(train_data, batch_size=64)
-    val_dataloader = DataLoader(val_data, batch_size=64)
+    train_dataloader = DataLoader(train_data, batch_size=opts.batch_size)
+    val_dataloader = DataLoader(val_data, batch_size=opts.batch_size)
     # Get cpu or gpu device for training.
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device} device")
@@ -234,7 +235,7 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
     # Declare loss function, optimizer, and scheduler.
     loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=opts.learning_rate)
-    scheduler = torch.optim.MultiStepLR(optimizer, milestones=opts.milestones, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=opts.milestones, gamma=0.1)
     # Define the training function.
 
     def train(dataloader, model, loss_fn, optimizer):
@@ -254,7 +255,8 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
     # The training loop.
-    epochs = opts.milestones.append(opts.max_epoch)
+    epochs = opts.milestones.copy()
+    epochs.append(opts.max_epoch)
     last_epoch = 0
     for epoch in epochs:
         for t in range(last_epoch, epoch):
@@ -266,11 +268,13 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
     # Estimate the offloading reward for both training and validation set.
     with torch.no_grad():
         train_est, val_est = list(), list()
-        for X, y in val_dataloader:
-            train_est.append(model(X).numpy())
+        for X, y in train_dataloader:
+            X, y = X.to(device), y.to(device)
+            train_est.append(model(X).cpu().numpy())
         train_est = np.concatenate(train_est)
         for X, y in val_dataloader:
-            val_est.append(model(X).numpy())
+            X, y = X.to(device), y.to(device)
+            val_est.append(model(X).cpu().numpy())
         val_est = np.concatenate(val_est)
     return train_est, val_est
 

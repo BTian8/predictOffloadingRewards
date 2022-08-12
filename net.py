@@ -7,11 +7,9 @@ from torchvision.transforms import ToTensor
 
 
 class EdgeDetectionDataset(Dataset):
-    def __init__(self, inputs, labels, transform=ToTensor(), target_transform=ToTensor()):
+    def __init__(self, inputs, labels):
         self.labels = labels
         self.inputs = inputs
-        self.transform = transform
-        self.target_transform = target_transform
 
     def __len__(self):
         return len(self.labels)
@@ -19,10 +17,8 @@ class EdgeDetectionDataset(Dataset):
     def __getitem__(self, idx):
         x = self.inputs[idx]
         label = self.labels[idx]
-        if self.transform:
-            x = self.transform(x)
-        if self.target_transform:
-            label = self.target_transform(label)
+        x = torch.from_numpy(x)
+        label = torch.tensor(label, dtype=torch.float32)
         return x, label
 
 
@@ -38,9 +34,8 @@ class EdgeDetectionNet(nn.Module):
         """
         super(EdgeDetectionNet, self).__init__()
         self.flatten = nn.Flatten()
-        self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2, 2)
-        self.conv_stacks, self.linear_stacks = [], []
+        self.conv_stacks, self.linear_stacks = nn.ModuleList(), nn.ModuleList()
         # Construct convolutional and linear stacks.
         for in_channel, out_channel, kernel_size, pool in zip(channels[:-1], channels[1:], kernels, pools):
             self.conv_stacks.append(self.conv_stack(in_channel, out_channel, kernel_size, pool))
@@ -61,7 +56,7 @@ class EdgeDetectionNet(nn.Module):
         """
         modules = [nn.Conv2d(in_channels, out_channels, kernel_size, padding='same'),
                    nn.BatchNorm2d(out_channels),
-                   self.relu]
+                   nn.ReLU()]
         if pool:
             modules.append(self.pool)
         conv = nn.Sequential(*modules)
@@ -77,7 +72,7 @@ class EdgeDetectionNet(nn.Module):
         """
         modules = [nn.Linear(in_features, out_features)]
         if not last:
-            modules.append(self.relu)
+            modules.append(nn.ReLU())
             modules.append(nn.Dropout())
         linear = nn.Sequential(*modules)
         return linear
@@ -92,5 +87,5 @@ class EdgeDetectionNet(nn.Module):
                 x = linear(x)
         else:
             # Use global average pooling if no fully-connected layer is applied.
-            x = torch.mean(x)
+            x = torch.mean(x, dim=-1)
         return x
