@@ -12,8 +12,9 @@ from torch.utils.data import DataLoader
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import BayesianRidge, LinearRegression, ElasticNet
 from sklearn.svm import SVR
+from sklearn.metrics import mean_squared_error as mse
 
-from .net import EdgeDetectionDataset, EdgeDetectionNet
+from net import EdgeDetectionDataset, EdgeDetectionNet
 
 """Train a regression model that maps the weak detector's intermediate feature map to the offloading reward."""
 
@@ -99,12 +100,13 @@ class BROpt:
 _BROPT = BROpt()
 
 
-def fit_BR(train_feature, val_feature, train_reward, opts=_BROPT):
+def fit_BR(train_feature, val_feature, train_reward, val_reward, opts=_BROPT):
     """
     Fit a Bayesian ridge regression model that predicts offloading reward based on weak detector feature map.
     :param train_feature: weak detector feature maps for the training dataset.
     :param val_feature: weak detector feature maps for the validation dataset.
     :param train_reward: offloading rewards for the training dataset.
+    :param val_reward: offloading rewards for the validation dataset.
     :param opts: options for fitting the regression model.
     :return: the estimated offloading reward for the training and validation dataset.
     """
@@ -113,15 +115,19 @@ def fit_BR(train_feature, val_feature, train_reward, opts=_BROPT):
     reg = BayesianRidge(alpha_1=opts.alpha_1, alpha_2=opts.alpha_2, lambda_1=opts.lambda_1, lambda_2=opts.lambda_2).fit(
         train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    train_mse, val_mse = mse(train_reward, train_est), mse(val_reward, val_est)
+    print(f"Trained Bayesian Ridge model with training MSE:{train_mse}, validation MSE:{val_mse}")
     return train_est, val_est
 
 
-def fit_LR(train_feature, val_feature, train_reward, opts=None):
+def fit_LR(train_feature, val_feature, train_reward, val_reward, opts=None):
     """Fit a linear regression model to predict offloading reward."""
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
     reg = LinearRegression().fit(train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    train_mse, val_mse = mse(train_reward, train_est), mse(val_reward, val_est)
+    print(f"Trained Linear Regression model with training MSE:{train_mse}, validation MSE:{val_mse}")
     return train_est, val_est
 
 
@@ -135,12 +141,14 @@ class ENOpt:
 _ENOPT = ENOpt()
 
 
-def fit_EN(train_feature, val_feature, train_reward, opts=_ENOPT):
+def fit_EN(train_feature, val_feature, train_reward, val_reward, opts=_ENOPT):
     """Fit an elastic net model to predict offloading reward."""
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
     reg = ElasticNet(alpha=opts.alpha, l1_ratio=opts.l1_ratio).fit(train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    train_mse, val_mse = mse(train_reward, train_est), mse(val_reward, val_est)
+    print(f"Trained Elastic Net model with training MSE:{train_mse}, validation MSE:{val_mse}")
     return train_est, val_est
 
 
@@ -155,12 +163,14 @@ class SVROpt:
 _SVROPT = SVROpt()
 
 
-def fit_SVR(train_feature, val_feature, train_reward, opts=_SVROPT):
+def fit_SVR(train_feature, val_feature, train_reward, val_reward, opts=_SVROPT):
     """Fit a support vector regression model to predict offloading reward."""
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
     reg = SVR(kernel=opts.kernel, gamma=opts.gamma, C=opts.C).fit(train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    train_mse, val_mse = mse(train_reward, train_est), mse(val_reward, val_est)
+    print(f"Trained Support Vector Regression model with training MSE:{train_mse}, validation MSE:{val_mse}")
     return train_est, val_est
 
 
@@ -175,13 +185,15 @@ class GBROpt:
 _GBROPT = GBROpt()
 
 
-def fit_GBR(train_feature, val_feature, train_reward, opts=_GBROPT):
+def fit_GBR(train_feature, val_feature, train_reward, val_reward, opts=_GBROPT):
     """Fit a Gradient Boosting Regressor to predict offloading reward."""
     train_feature = [x.flatten() for x in train_feature]
     val_feature = [x.flatten() for x in val_feature]
     reg = GradientBoostingRegressor(learning_rate=opts.learning_rate, n_estimators=opts.n_estimators,
                                     subsample=opts.subsample).fit(train_feature, train_reward)
     train_est, val_est = reg.predict(train_feature), reg.predict(val_feature)
+    train_mse, val_mse = mse(train_reward, train_est), mse(val_reward, val_est)
+    print(f"Trained Gradient Boosting Regressor with training MSE:{train_mse}, validation MSE:{val_mse}")
     return train_est, val_est
 
 
@@ -210,20 +222,23 @@ class CNNOpt:
     kernels: List = field(default_factory=lambda: [3, 3])  # Kernel size for each conv layer.
     pools: List = field(default_factory=lambda: [True, True])  # Whether max-pooling each conv layer.
     linear: List = field(default_factory=lambda: [])  # Number of features in each linear after the conv layers.
+    test_epoch: int = 5  # Number of epochs for periodic test using the validation set.
+    model_dir: str = ''  # Directory to save the model weights.
+    load: bool = False  # If model is loaded from pre-trained weights.
+    save: bool = True  # If model weights need to be saved after training.
 
 
 _CNNOPT = CNNOpt()
 
 
-def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
+def fit_CNN(train_feature, val_feature, train_reward, val_reward, opts=_CNNOPT):
     """Fit a Convolutional Neural Network to predict offloading reward."""
     # Import pytorch.
     import torch
     from torch.utils.data import DataLoader
     # Prepare the dataset.
-    # TODO: add validation reward as labels to perform periodic validation.
     train_data = EdgeDetectionDataset(train_feature, train_reward)
-    val_data = EdgeDetectionDataset(val_feature, np.zeros((len(val_feature),)))
+    val_data = EdgeDetectionDataset(val_feature, val_reward)
     train_dataloader = DataLoader(train_data, batch_size=opts.batch_size)
     val_dataloader = DataLoader(val_data, batch_size=opts.batch_size)
     # Get cpu or gpu device for training.
@@ -232,12 +247,15 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
     # Build the CNN model.
     model = EdgeDetectionNet(opts.channels, opts.kernels, opts.pools, opts.linear).to(device)
     print(model)
+    # Load weights if specified.
+    if opts.load and opts.model_dir != '':
+        model.load_state_dict(torch.load(opts.model_dir))
     # Declare loss function, optimizer, and scheduler.
     loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=opts.learning_rate)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=opts.milestones, gamma=0.1)
-    # Define the training function.
 
+    # Define the training and test function.
     def train(dataloader, model, loss_fn, optimizer):
         size = len(dataloader.dataset)
         model.train()
@@ -254,6 +272,18 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
                 loss, current = loss.item(), batch * len(X)
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
+    def test(dataloader, model, loss_fn):
+        num_batches = len(dataloader)
+        model.eval()
+        test_loss = 0
+        with torch.no_grad():
+            for X, y in dataloader:
+                X, y = X.to(device), y.to(device)
+                pred = model(X)
+                test_loss += loss_fn(pred, y).item()
+        test_loss /= num_batches
+        print(f"Avg Test Loss: {test_loss:>8f} \n")
+
     # The training loop.
     epochs = opts.milestones.copy()
     epochs.append(opts.max_epoch)
@@ -262,9 +292,10 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
         for t in range(last_epoch, epoch):
             print(f"Epoch {t + 1}\n-------------------------------")
             train(train_dataloader, model, loss_fn, optimizer)
+            if t % opts.test_epoch == 0:
+                test(val_dataloader, model, loss_fn)
             scheduler.step()
         last_epoch = epoch
-    # TODO: save the model weights to model directory.
     # Estimate the offloading reward for both training and validation set.
     with torch.no_grad():
         train_est, val_est = list(), list()
@@ -276,17 +307,24 @@ def fit_CNN(train_feature, val_feature, train_reward, opts=_CNNOPT):
             X, y = X.to(device), y.to(device)
             val_est.append(model(X).cpu().numpy())
         val_est = np.concatenate(val_est)
+    # Save model if specified.
+    if opts.save and opts.model_dir != '':
+        torch.save(model.state_dict(), opts.model_dir)
     return train_est, val_est
 
 
 def main(opts):
     # Load the weak detector feature maps for the training and validation dataset.
-    train_feature = load_feature(opts.train_dir, opts.stage, size=5)
-    val_feature = load_feature(opts.val_dir, opts.stage, size=5)
+    ifpool = opts.pool_size > 0
+    train_feature = load_feature(opts.train_dir, opts.stage, pool=ifpool, size=opts.pool_size)
+    val_feature = load_feature(opts.val_dir, opts.stage, pool=ifpool, size=opts.pool_size)
     # Load the offloading rewards for the training dataset.
-    train_reward = np.load(opts.label)
+    train_reward = np.load(opts.train_label)
+    val_reward = np.load(opts.val_label)
     assert len(train_feature) == len(
         train_reward), "Inconsistent number of training feature maps and offloading rewards."
+    assert len(val_feature) == len(
+        val_reward), "Inconsistent number of validation feature maps and offloading rewards."
     # Select and fit the regression model.
     model_names = ['BR', 'LR', 'EN', 'SVR', 'GBR', 'CNN']
     models = [fit_BR, fit_LR, fit_EN, fit_SVR, fit_GBR, fit_CNN]
@@ -297,7 +335,12 @@ def main(opts):
         print("Please select a regression model from 'BR' (Bayesian Ridge), 'LR' (Linear Regression), " +
               "'EN' (Elastic Net), 'SVR' (Support Vector Regression), 'GBR' (Gradient Boosting Regressor), " +
               "and 'CNN' (Convolutional Neural Network).")
-    train_est, val_est = model(train_feature, val_feature, train_reward)
+    if not ifpool:
+        assert opts.model == 'CNN', "Only fully convolutional NN can take input with different shapes. " + \
+                                    "Please set model to 'CNN' if you choose to skip the RoI pooling step."
+        _CNNOPT.batch_size = 1
+    _CNNOPT.model_dir = opts.model_dir
+    train_est, val_est = model(train_feature, val_feature, train_reward, val_reward)
     # Save the estimated offloading reward.
     Path(opts.save_dir).mkdir(parents=True, exist_ok=True)
     np.savez(os.path.join(opts.save_dir, f'{opts.model}_estimate.npz'), train=train_est, val=val_est)
@@ -309,16 +352,19 @@ def getargs():
     args = argparse.ArgumentParser()
     args.add_argument('train_dir', help="Directory that saves the weak detector feature maps for the training set.")
     args.add_argument('val_dir', help="Directory that saves the weak detector feature maps for the validation set.")
-    args.add_argument('label', help="Path to the offloading reward for the training set.")
+    args.add_argument('train_label', help="Path to the offloading reward for the training set.")
+    args.add_argument('val_label', help="Path to the offloading reward for the validation set.")
     args.add_argument('save_dir', help="Directory to save the estimated offloading reward.")
-    args.add_argument('--model_dir', type=str, default='', help="Directory to save the model weights.")
     args.add_argument('--stage', type=int, default=23,
                       help="Stage number of the selected feature map. For yolov5 detectors, " +
                            "this should be a number between [0, 23].")
+    args.add_argument('--pool_size', type=int, default=8,
+                      help="Size (H,W) of the feature maps after using RoI pooling. If 0, skip RoI pooling.")
     args.add_argument('--model', type=str, default='LR',
                       help="Type of the regression model. Available choices include 'BR' (Bayesian Ridge), " +
                            "'LR' (Linear Regression), 'EN' (Elastic Net), 'SVR' (Support Vector Regression), " +
                            "'GBR' (Gradient Boosting Regressor), and 'CNN' (Convolutional Neural Network).")
+    args.add_argument('--model_dir', type=str, default='', help="Directory to save the (CNN) model weights.")
     return args.parse_args()
 
 

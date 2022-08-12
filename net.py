@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
-from torchvision.transforms import ToTensor
 
 """Dataloader and NN model for offloading reward estimation."""
 
@@ -18,28 +17,33 @@ class EdgeDetectionDataset(Dataset):
         x = self.inputs[idx]
         label = self.labels[idx]
         x = torch.from_numpy(x)
-        label = torch.tensor(label, dtype=torch.float32)
+        label = torch.tensor([label], dtype=torch.float32)
         return x, label
 
 
 class EdgeDetectionNet(nn.Module):
-    def __init__(self, channels, kernels, pools, linear=[]):
+    def __init__(self, channels, kernels, pools, linear):
         """
         Build a convolutional neural network to predict offloading reward using feature maps from the weak detector.
-        :param channels: a list with the number of channel for each convolutional layer.
+        :param channels: a list with the number of (input and output) channel for each convolutional layer.
+                         If an empty list is given, build a network without convolutional layers.
         :param kernels: a list with the kernel size for each convolutional layer.
         :param pools: a boolean list that specifies whether each convolutional layer should followed by a pooling layer.
-        :param linear: an optional list that specifies the number of features in each linear (fully-connected) layer.
-                       If an empty list is given, build a fully-convolutional network ends with global average pooling.
+        :param linear: a list that specifies the number of (input and output) features in each linear (fully-connected)
+                       layer. If an empty list is given, build a fully-convolutional network that ends with
+                       global average pooling.
         """
         super(EdgeDetectionNet, self).__init__()
         self.flatten = nn.Flatten()
         self.pool = nn.MaxPool2d(2, 2)
         self.conv_stacks, self.linear_stacks = nn.ModuleList(), nn.ModuleList()
         # Construct convolutional and linear stacks.
-        for in_channel, out_channel, kernel_size, pool in zip(channels[:-1], channels[1:], kernels, pools):
-            self.conv_stacks.append(self.conv_stack(in_channel, out_channel, kernel_size, pool))
-        if len(linear) > 0:
+        assert len(channels) > 1 or len(linear) > 1, \
+            "Invalid CNN architecture. Please add at least 1 convolutional or linear layer."
+        if len(channels) > 1:
+            for in_channel, out_channel, kernel_size, pool in zip(channels[:-1], channels[1:], kernels, pools):
+                self.conv_stacks.append(self.conv_stack(in_channel, out_channel, kernel_size, pool))
+        if len(linear) > 1:
             last = [False] * (len(linear) - 1)
             last[-1] = True
             for in_feature, out_feature, l in zip(linear[:-1], linear[1:], last):
@@ -82,10 +86,9 @@ class EdgeDetectionNet(nn.Module):
         for conv in self.conv_stacks:
             x = conv(x)
         x = self.flatten(x)
-        if len(self.linear_stacks) > 0:
-            for linear in self.linear_stacks:
-                x = linear(x)
-        else:
+        for linear in self.linear_stacks:
+            x = linear(x)
+        if len(self.linear_stacks) == 0:
             # Use global average pooling if no fully-connected layer is applied.
-            x = torch.mean(x, dim=-1)
+            x = torch.mean(x, dim=-1, keepdim=True)
         return x
