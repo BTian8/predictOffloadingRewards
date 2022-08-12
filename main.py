@@ -285,17 +285,12 @@ def fit_CNN(train_feature, val_feature, train_reward, val_reward, opts=_CNNOPT):
         print(f"Avg Test Loss: {test_loss:>8f} \n")
 
     # The training loop.
-    epochs = opts.milestones.copy()
-    epochs.append(opts.max_epoch)
-    last_epoch = 0
-    for epoch in epochs:
-        for t in range(last_epoch, epoch):
-            print(f"Epoch {t + 1}\n-------------------------------")
-            train(train_dataloader, model, loss_fn, optimizer)
-            if t % opts.test_epoch == 0:
-                test(val_dataloader, model, loss_fn)
-            scheduler.step()
-        last_epoch = epoch
+    for t in range(opts.max_epoch):
+        print(f"Epoch {t + 1}\n-------------------------------")
+        train(train_dataloader, model, loss_fn, optimizer)
+        if t % opts.test_epoch == 0:
+            test(val_dataloader, model, loss_fn)
+        scheduler.step()
     # Estimate the offloading reward for both training and validation set.
     with torch.no_grad():
         train_est, val_est = list(), list()
