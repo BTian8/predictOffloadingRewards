@@ -204,19 +204,6 @@ class CNNOpt:
     gamma: float = 0.1  # Scale for updating learning rate at each milestone.
     milestones: List = field(default_factory=lambda: [10, 15, 20])  # Epochs to update the learning rate.
     max_epoch: int = 25  # Maximum number of epochs for training.
-    channels: List = field(default_factory=lambda: [256, 128, 32])  # Number of channels in each conv layer.
-    kernels: List = field(default_factory=lambda: [3, 3])  # Kernel size for each conv layer.
-    pools: List = field(default_factory=lambda: [True, True])  # Whether max-pooling each conv layer.
-    linear: List = field(default_factory=lambda: [])  # Number of features in each linear after the conv layers.
-
-
-@dataclass
-class CNNOpt:
-    """Options for the Gradient Boosting regression model."""
-    learning_rate: float = 1e-3  # Initial learning rate.
-    gamma: float = 0.1  # Scale for updating learning rate at each milestone.
-    milestones: List = field(default_factory=lambda: [10, 15, 20])  # Epochs to update the learning rate.
-    max_epoch: int = 25  # Maximum number of epochs for training.
     batch_size: int = 64  # Batch size for model training.
     channels: List = field(default_factory=lambda: [256, 128, 32])  # Number of channels in each conv layer.
     kernels: List = field(default_factory=lambda: [3, 3])  # Kernel size for each conv layer.
